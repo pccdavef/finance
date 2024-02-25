@@ -10,7 +10,7 @@ fn main() {
 
     let loan = Loan::new(
         200000.0,
-        15,
+        15.,
         7.0,
         PmtSchedule::Monthly,
         Compounding::Daily,

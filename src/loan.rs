@@ -70,7 +70,7 @@ impl fmt::Display for LoanPayment {
 #[derive(PartialEq, Debug)]
 pub struct Loan {
     pub principal: f64,
-    pub term: u16,
+    pub term: f64,
     pub annual_rate: f64,
     pub pmt_schedule: PmtSchedule,
     pub compound_type: Compounding,
@@ -85,7 +85,7 @@ pub struct Loan {
 impl Loan {
     pub fn new(
         principal: f64,
-        term: u16,
+        term: f64,
         annual_rate: f64,
         pmt_schedule: PmtSchedule,
         compound_type: Compounding,
@@ -157,17 +157,17 @@ impl Loan {
 
 }
 
-fn round(x: f64, dec: f64) -> f64 {
-    if x == 0. {
+fn round(amt: f64, dec: f64) -> f64 {
+    if amt == 0. {
         0.
     } else {
-        (x * 10_f64.powf(dec)).round() / 10_f64.powf(dec)
+        (amt * 10_f64.powf(dec)).round() / 10_f64.powf(dec)
     }
 }
 
 fn get_pmt_amount(
     &principal: &f64,                           // loan principal
-    &term: &u16,                                // term of loan (expected in years)
+    &term: &f64,                                // term of loan (expected in years)
     &annual_rate: &f64,                         // annual interest rate as decimal (i.e., 2.5, 7.0)
     &pmt_schedule: &PmtSchedule,        // payment frequency
     &compound_type: &Compounding,       // interest compounding frequency
@@ -176,16 +176,15 @@ fn get_pmt_amount(
     let compounding_periods = get_compounding_periods(compound_type);
     let pmt_count = get_pmt_schedule(pmt_schedule);
 
-    let pmt_rate = ((1.0 + ((annual_rate / 100.0) / compounding_periods as f64))
-        .powf(compounding_periods as f64 / pmt_count as f64))
+    let pmt_rate = ((1. + ((annual_rate / 100.) / compounding_periods))
+        .powf(compounding_periods / pmt_count))
         - 1.0;
-    //    let daily_rate: f64 = (annual_rate / 100.0) / compounding_periods as f64;
-    let total_pmts = (term * pmt_count as u16).into();
-    let factor = (1.0 + pmt_rate).powi(total_pmts);
+
+    let total_pmts = term * pmt_count;
+    let factor = (1. + pmt_rate).powf(total_pmts);
     
-    // return the result to 2 decimal places
-    round((principal * pmt_rate * factor) / (factor - 1.0), dec_places)
-    //((principal * pmt_rate * factor) / (factor - 1.0) * 100.0).round() / 100.0
+    // return the result to specified decimal places
+    round((principal * pmt_rate * factor) / (factor - 1.), dec_places)
 }
 
 // calculate a vector of scheduled LoanPayment to add to Loan during New
@@ -201,37 +200,35 @@ fn add_scheduled_pmts(
 ) -> Vec<LoanPayment> {
     let mut sched_pmt: Vec<LoanPayment> = Vec::new();
 
-    let compounding_periods: u16 = get_compounding_periods(compound_type);
-    let pmt_frequency: u8 = get_pmt_schedule(pmt_schedule);
+    let compounding_periods = get_compounding_periods(compound_type);
+    let pmt_frequency = get_pmt_schedule(pmt_schedule);
     
-    let mut end_balance  = 1.0; // arbitrary value > 0. Will be set by calculation in the loop.
+    let mut end_balance  = 1.;                      // arbitrary value > 0. Will be set by calculation in the loop.
     let mut begin_balance  = principal;             // beginning balance for the compounding period
     let mut pmt_number  = 0;                        // incremental payment number
     let mut pmt_amt  = pmt_amount;                  // the amount of each payment
-    let mut begin_date: NaiveDate = loan_date;          // beginning date of the compounding period
-    let mut end_date: NaiveDate = first_pmt_date;       // end date of the compounding period
-    let mut pmt_period_rate;                       // rate applied to the principal to determine interest
-    let mut interest;                              // interest payment
-    let mut days64;
+    let mut begin_date: NaiveDate = loan_date;           // beginning date of the compounding period
+    let mut end_date: NaiveDate = first_pmt_date;        // end date of the compounding period
+    let mut period_interest_rate= 0.;               // rate applied to the principal to determine interest
+    let mut interest;                               // interest payment
     let mut days;                                  // length of the compounding period in days
-    let mut key;                                   // key value into the HashMap
-    let daily_rate = (annual_rate / 100.0) / compounding_periods as f64;
-    let mut common_rates = HashMap::new();  // HashMap of common daily compound interest rates
+    let mut common_rates = HashMap::new();  // HashMap of common compound interest rates
+    let daily_rate = (annual_rate / 100.) / compounding_periods;
 
-    // create hashmap of rate factors for common durations (28, 29, 30 and 31 days)
-    if compounding_periods == 365 {
+    
+    if compounding_periods == 365. {        // create hashmap of period interest rates for common durations (28, 29, 30 and 31 days)
         for i in [28, 29, 30, 31] {
-            common_rates.insert(i, (1.0 + daily_rate).powi(i) - 1.0);
+            common_rates.insert(i, (1. + daily_rate).powi(i) - 1.);
         }
-    } else {
-        if u16::from(pmt_frequency) == compounding_periods {
-            common_rates.insert(pmt_frequency.into(), daily_rate);
+    } else {                                // calculate the period interest rate based on payment schedule and compounding type
+        if pmt_frequency == compounding_periods {
+            period_interest_rate = daily_rate;
         } else {
-            common_rates.insert(pmt_frequency.into(), (1.0 + daily_rate).powf((compounding_periods / pmt_frequency as u16).into()) - 1.0);
+            period_interest_rate = (1. + daily_rate).powf(compounding_periods / pmt_frequency) - 1.;
         }
     }
 
-    while end_balance > 0.0 && pmt_number < 500 {
+    while end_balance > 0. && pmt_number < 500 {
         if pmt_number > 0 {
             begin_date = end_date;
             end_date = get_next_pmt_date(&begin_date, &pmt_schedule);
@@ -239,18 +236,20 @@ fn add_scheduled_pmts(
         }
 
         pmt_number += 1;
-        days64 = end_date.signed_duration_since(begin_date).num_days();
-        days = i32::try_from(days64).unwrap();
-//        days = (end_date - begin_date).num_days().try_into().unwrap();
-        key = if compounding_periods == 365 { days } else { pmt_frequency.into() };
-        pmt_period_rate = common_rates.get(&key).copied().unwrap_or((1.0 + daily_rate).powi(days) - 1.0);
-        trace!("pmt # {} days {}, key {}, period rate {}", pmt_number, days, key, pmt_period_rate);
-        interest = begin_balance * pmt_period_rate;
+
+        if compounding_periods == 365. {
+            days = end_date.signed_duration_since(begin_date).num_days() as i32;
+            period_interest_rate = common_rates.get(&days).copied().unwrap_or((1. + daily_rate).powi(days) - 1.);
+        }
+        trace!("pmt # {}, period interest rate {}", pmt_number, period_interest_rate);
+
+        interest = begin_balance * period_interest_rate;
+
         if pmt_amt <= begin_balance {
-            end_balance = begin_balance - ( pmt_amt - interest);
+            end_balance = begin_balance - (pmt_amt - interest);
         } else {
             pmt_amt = begin_balance + interest;
-            end_balance = 0.0;
+            end_balance = 0.;
         }
         trace!("Pmt # {}, end date {}, interest {}, end bal {}", pmt_number, end_date, interest, end_balance);
 
@@ -266,25 +265,25 @@ fn add_scheduled_pmts(
 
 }
 
-fn get_compounding_periods(compound_type: Compounding) -> u16 {
+fn get_compounding_periods(compound_type: Compounding) -> f64 {
     match compound_type {
-        Compounding::Daily => 365,
-        Compounding::Monthly => 12,
-        Compounding::Quarterly => 4,
-        Compounding::SemiAnnually => 2,
-        Compounding::Annually => 1,
+        Compounding::Daily => 365.,
+        Compounding::Monthly => 12.,
+        Compounding::Quarterly => 4.,
+        Compounding::SemiAnnually => 2.,
+        Compounding::Annually => 1.,
     }
 }
 
-fn get_pmt_schedule(pmt_schedule: PmtSchedule) -> u8 {
+fn get_pmt_schedule(pmt_schedule: PmtSchedule) -> f64 {
     match pmt_schedule {
-        PmtSchedule::Weekly => 52,
-        PmtSchedule::Biweekly => 26,
-        PmtSchedule::SemiMonthly => 24,
-        PmtSchedule::Monthly => 12,
-        PmtSchedule::Quarterly => 4,
-        PmtSchedule::SemiAnnually => 2,
-        PmtSchedule::Annually => 1,
+        PmtSchedule::Weekly => 52.,
+        PmtSchedule::Biweekly => 26.,
+        PmtSchedule::SemiMonthly => 24.,
+        PmtSchedule::Monthly => 12.,
+        PmtSchedule::Quarterly => 4.,
+        PmtSchedule::SemiAnnually => 2.,
+        PmtSchedule::Annually => 1.,
     }
 }
 
@@ -370,10 +369,10 @@ mod tests {
     fn test_get_pmt_amount() {
 
         // exhaustive test of payment calculations
-        let principal = 200000.0;
-        let term = 15;
-        let annual_rate = 7.0;
-        let dec_places = 2.0;
+        let principal = 200000.;
+        let term = 15.;
+        let annual_rate = 7.;
+        let dec_places = 2.;
 
         assert_eq!(get_pmt_amount(&principal, &term, &annual_rate, &PmtSchedule::Weekly, &Compounding::Daily, &dec_places), 414.42);
         assert_eq!(get_pmt_amount(&principal, &term, &annual_rate, &PmtSchedule::Biweekly, &Compounding::Daily, &dec_places), 829.40);
@@ -418,16 +417,16 @@ mod tests {
     }
 
     #[test]
-    fn test_new_loan () {
+    fn test_daily_compound_loan () {
         let loan = Loan::new(
-            200000.0,
-            15,
-            7.0,
+            200000.,
+            15.,
+            7.,
             PmtSchedule::Monthly,
             Compounding::Daily,
             NaiveDate::from_ymd_opt(2024, 2, 15).unwrap(),
             NaiveDate::from_ymd_opt(2024, 4, 1).unwrap(),
-            4.0,
+            4.,
         );
     
         assert_eq!(loan.get_pmt_amount(), &1799.8691);
@@ -438,6 +437,54 @@ mod tests {
         assert_eq!(loan.get_pmt_info(&21), "pmt number 21, date 2025-12-01, payment $1799.8691, interest paid $1081.1432, ending balance $186672.2180");
         assert_eq!(loan.get_pmt_info(&22), "pmt number 22, date 2026-01-01, payment $1799.8691, interest paid $1113.0032, ending balance $185985.3521");
         assert_eq!(loan.get_pmt_info(&182), "pmt number 182, date 2039-05-01, payment $93.7322, interest paid $0.5377, ending balance $0.0000");
+    
+    }
+
+    #[test]
+    fn test_monthly_compound_loan () {
+        let loan = Loan::new(
+            200000.,
+            15.,
+            7.,
+            PmtSchedule::Monthly,
+            Compounding::Monthly,
+            NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 4, 1).unwrap(),
+            4.,
+        );
+    
+        assert_eq!(loan.get_pmt_amount(), &1797.6565);
+        assert_eq!(loan.get_pmt_count(), 180);
+        assert_eq!(loan.get_pmt_info(&1), "pmt number 1, date 2024-04-01, payment $1797.6565, interest paid $1166.6667, ending balance $199369.0102");
+        assert_eq!(loan.get_pmt_info(&2), "pmt number 2, date 2024-05-01, payment $1797.6565, interest paid $1162.9859, ending balance $198734.3396");
+        assert_eq!(loan.get_pmt_info(&20), "pmt number 20, date 2025-11-01, payment $1797.6565, interest paid $1092.9361, ending balance $186655.7608");
+        assert_eq!(loan.get_pmt_info(&30), "pmt number 30, date 2026-09-01, payment $1797.6565, interest paid $1050.7314, ending balance $179378.4562");
+        assert_eq!(loan.get_pmt_info(&40), "pmt number 40, date 2027-07-01, payment $1797.6565, interest paid $1005.9991, ending balance $171665.3236");
+        assert_eq!(loan.get_pmt_info(&180), "pmt number 180, date 2039-03-01, payment $1797.6697, interest paid $10.4256, ending balance $0.0000");
+    
+    }
+
+    #[test]
+    fn test_quarter_compound_loan () {
+        let loan = Loan::new(
+            200000.,
+            15.,
+            7.,
+            PmtSchedule::Monthly,
+            Compounding::Quarterly,
+            NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 4, 1).unwrap(),
+            4.,
+        );
+    
+        assert_eq!(loan.get_pmt_amount(), &1793.1377);
+        assert_eq!(loan.get_pmt_count(), 180);
+        assert_eq!(loan.get_pmt_info(&1), "pmt number 1, date 2024-04-01, payment $1793.1377, interest paid $1159.9265, ending balance $199366.7888");
+        assert_eq!(loan.get_pmt_info(&2), "pmt number 2, date 2024-05-01, payment $1793.1377, interest paid $1156.2541, ending balance $198729.9052");
+        assert_eq!(loan.get_pmt_info(&20), "pmt number 20, date 2025-11-01, payment $1793.1377, interest paid $1086.3865, ending balance $186613.1317");
+        assert_eq!(loan.get_pmt_info(&30), "pmt number 30, date 2026-09-01, payment $1793.1377, interest paid $1044.3111, ending balance $179316.2120");
+        assert_eq!(loan.get_pmt_info(&40), "pmt number 40, date 2027-07-01, payment $1793.1377, interest paid $999.7307, ending balance $171584.8806");
+        assert_eq!(loan.get_pmt_info(&180), "pmt number 180, date 2039-03-01, payment $1793.1302, interest paid $10.3395, ending balance $0.0000");
     
     }
 
