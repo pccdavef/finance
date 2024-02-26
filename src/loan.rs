@@ -1,13 +1,17 @@
 #![allow(unused_imports)]
 use chrono::{Datelike, NaiveDate};
 use log::{info, trace, warn};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt};
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum PmtSchedule {
     Weekly,
     Biweekly,
     SemiMonthly,
+    #[default]
     Monthly,
     Quarterly,
     SemiAnnually,
@@ -21,8 +25,10 @@ impl fmt::Display for PmtSchedule {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Compounding {
+    #[default]
     Daily,
     Monthly,
     Quarterly,
@@ -30,7 +36,8 @@ pub enum Compounding {
     Annually,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LoanPayment {
     pub pmt_number: i32,
     pub pmt_date: NaiveDate,
@@ -71,7 +78,8 @@ impl fmt::Display for LoanPayment {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Loan {
     pub principal: f64,
     pub term: f64,
@@ -87,7 +95,6 @@ pub struct Loan {
 }
 
 impl Loan {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         principal: f64,
         term: f64,
@@ -192,7 +199,6 @@ fn get_pmt_amount(
 }
 
 // calculate a vector of scheduled LoanPayment to add to Loan during New
-#[allow(clippy::too_many_arguments)]
 fn add_scheduled_pmts(
     &principal: &f64,
     &loan_date: &NaiveDate,

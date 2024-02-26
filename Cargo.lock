@@ -95,6 +95,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "log",
+ "serde",
  "simple_logger",
  "test-log",
 ]

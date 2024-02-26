@@ -1,4 +1,4 @@
-#![allow(unused_imports)]
+#![allow(unused_imports, dead_code)]
 use chrono::NaiveDate;
 use finance::loan::*;
 use log::{info, warn};
@@ -23,4 +23,11 @@ fn main() {
     );
 
     loan.show_amortization();
+}
+
+fn is_normal<T: Sized + Send + Sync + Unpin>() {}
+
+#[test]
+fn normal_types() {
+    is_normal::<LoanPayment>();
 }
