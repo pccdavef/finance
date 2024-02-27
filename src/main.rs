@@ -25,6 +25,7 @@ fn main() {
     loan.show_amortization();
 }
 
+// verifies that types can implement the gated traits below
 fn is_normal<T: Sized + Send + Sync + Unpin>() {}
 
 #[test]
